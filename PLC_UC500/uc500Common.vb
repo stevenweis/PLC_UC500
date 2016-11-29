@@ -1,22 +1,23 @@
 ﻿Imports System.Text
-Imports System.Threading
-Imports System.IO
-Imports System.IO.Ports
 
 Public Class uc500Common
     Private CommandTX As String '傳送指令(TX)
     Private ReciveRX As New List(Of Byte) '接收指令(RX)
     Dim UC500serialport As New SerialPort4Machine
     Private PortON_flag As Boolean
-    Private status As MarkType = MarkType.horizontal
+    Private particularMode As Byte
 
-    Enum MarkType
+    Public Enum MarkType
         Vertical = 0 '垂直
-        Vertical_Reverse = 1 '垂直反向
-        horizontal = 2 '水平
+        horizontal = 1 '水平
+        Vertical_Reverse = 2 '垂直反向
         horizontal_Reverse = 3 '水平反向
-        Arc = 4 '圓弧
-        Arc_Reverse = 5 '圓弧反向
+        Vertical_twoLine = 4 '垂直二行
+        horizontal_twoLine = 5 '水平二行
+        Vertical_Reverse_twoLine = 6 '垂直反向二行
+        horizontal_Reverse_twoLine = 7 '水平反向二行
+        'Arc = 4 '圓弧
+        'Arc_Reverse = 5 '圓弧反向
     End Enum
 
     ''' <summary>
@@ -47,6 +48,15 @@ Public Class uc500Common
             Return ReciveRX
         End Get
     End Property
+    Public WriteOnly Property GetMode() As Byte
+        Set(ByVal value As Byte)
+            particularMode = value
+        End Set
+    End Property
+
+#Region " Events "
+
+#End Region
 
 #Region "各參數屬性"
     Private MarkMode As String '打字模式(L OR C)
@@ -58,21 +68,24 @@ Public Class uc500Common
     Private MarkY As String '打標位置1_Y
     Private MarkX_two As String '打標位置2_X
     Private MarkY_two As String '打標位置2_Y
+    Private lineSpace As String ' 行間距
     '=============================================
     Private MarkForce As String '打字力道
     'Private MarkPoint As String '打字點數(每mm)
     Private Heigth As String '字高
     Private Width As Byte '字寬
-    Private Between As String '間距
+    Private Between As Byte '間距
     Private Angle_L As String '角度(L線性模式)
     Private Angle_C As String '角度(C圓弧模式)
     Private radius_C As String '半徑(C圓弧模式)
     Private CorW_C As String '順逆時針(C圓弧模式)
 
-    Private line1 As String '順逆時針(C圓弧模式)
-    Private line2 As String '順逆時針(C圓弧模式)
+    Private offsetAngle As SByte '角度微調
+    Private Font As Byte
+    Private line1 As String = "[V0]" '
+    Private line2 As String = "[V1]" '
 
-    Private lineCnt As Byte = 1 '行數(1=一行, 2=兩行)
+    Private lineCnt As Byte = 1 '行數(1 = 一行, 2 = 兩行)
     ''' <summary>
     ''' 每行幾個字
     ''' </summary>
@@ -92,7 +105,6 @@ Public Class uc500Common
         End Get
         Set(ByVal value As String)
             MarkMode = value
-
         End Set
     End Property
     ''' <summary>
@@ -182,7 +194,6 @@ Public Class uc500Common
             MarkX_two = value
         End Set
     End Property
-
     ''' <summary>
     ''' 位置2 Y軸
     ''' </summary>
@@ -193,6 +204,18 @@ Public Class uc500Common
         End Get
         Set(ByVal value As String)
             MarkY_two = value
+        End Set
+    End Property
+    ''' <summary>
+    ''' 兩行間距
+    ''' </summary>
+    ''' <returns></returns>
+    Public Property setLineSpace() As String
+        Get
+            Return lineSpace
+        End Get
+        Set(ByVal value As String)
+            lineSpace = value
         End Set
     End Property
     '==============================================
@@ -239,16 +262,17 @@ Public Class uc500Common
     ''' 字寬
     ''' </summary>
     ''' <returns></returns>
-    Public Property setWidth() As Byte
+    Public Property setWidth() As String
         Get
-            Return Width
+            Return Width / 50
         End Get
-        Set(ByVal value As Byte)
-            If value > 100 Then
-                Width = 100
-            Else
-                Width = value
-            End If
+        Set(ByVal value As String)
+            'If value > 100 Then
+            '    Width = 100
+            'Else
+            '    Width = value
+            'End If
+            Width = (50 * value)
         End Set
     End Property
 
@@ -258,10 +282,10 @@ Public Class uc500Common
     ''' <returns></returns>
     Public Property setBetween() As String
         Get
-            Return Between
+            Return (Between / 200) * (Width / 50)
         End Get
         Set(ByVal value As String)
-            Between = value
+            Between = 200 * (value / (Width / 50))
         End Set
     End Property
 
@@ -275,6 +299,30 @@ Public Class uc500Common
         End Get
         Set(ByVal value As String)
             Angle_L = value
+        End Set
+    End Property
+    ''' <summary>
+    ''' 角度微調(L模式)
+    ''' </summary>
+    ''' <returns></returns>
+    Public Property setOffsetAngle() As SByte
+        Get
+            Return offsetAngle
+        End Get
+        Set(ByVal value As SByte)
+            offsetAngle = value
+        End Set
+    End Property
+    ''' <summary>
+    ''' 角度微調(L模式)
+    ''' </summary>
+    ''' <returns></returns>
+    Public Property setFont() As Byte
+        Get
+            Return Font
+        End Get
+        Set(ByVal value As Byte)
+            Font = value
         End Set
     End Property
 
@@ -437,6 +485,7 @@ Public Class uc500Common
     Public Function serialPORTclose() As Boolean
         If UC500serialport.CloseComm() Then
             PortON_flag = False
+            Return True
         End If
         Return False
     End Function
@@ -460,6 +509,68 @@ Public Class uc500Common
         FooterStructure(FOOTER)
         pfCommand = title + Chr(13) + Chr(10) + HEAD + MAIN + FOOTER
 
+        Dim TX_HEAD = GetSendBuffer(pfstr) '轉成UTF-8(頭檔)
+        Dim TX_FILE = GetSendBuffer(pfCommand) '轉成UTF-8(內文)
+
+        Dim result(TX_FILE.Length + 3) As Byte
+        result(0) = 239
+        result(1) = 187
+        result(2) = 191
+        result(result.Count - 1) = 13
+        Array.Copy(TX_FILE, 0, result, 3, TX_FILE.Length)
+        LENGTH_STR = result.Count - 1 + TX_HEAD.Count
+
+        Dim fin_result(result.Count + TX_HEAD.Count + 3) As Byte
+        If LENGTH_STR >= 256 Then
+            LENGTH_STR = LENGTH_STR - 256
+            fin_result(2) = 1
+        Else
+            fin_result(2) = 0
+        End If
+        fin_result(0) = 27
+        fin_result(1) = 0
+        fin_result(3) = LENGTH_STR
+        Array.Copy(TX_HEAD, 0, fin_result, 4, TX_HEAD.Length)
+        Array.Copy(result, 0, fin_result, TX_HEAD.Length + 4, result.Length)
+        Dim cmdstr As String
+        For I = 0 To fin_result.Count - 1
+            Dim TEMP = fin_result(I)
+            cmdstr = cmdstr & "[" & TEMP & "]"
+        Next
+        CommandTX = cmdstr
+
+
+        If PortON_flag = True Then
+            ReciveRX.Clear()
+            Dim ValueFlag As Boolean = True
+            UC500serialport.SendDataUTF_8(fin_result)
+            Do
+                UC500serialport.Get2EndChar_UTF8(ReciveRX, Chr(13.ToString))
+                If ReciveRX(ReciveRX.Count - 1) = 13 Then
+                    ValueFlag = False
+                End If
+            Loop While (ValueFlag = True)
+
+            Return DisplayText(ReciveRX.ToArray)
+        End If
+    End Function
+    ''' <summary>
+    ''' ParticularCommand(PLC專用模式)
+    ''' </summary>
+    ''' <param name="fileName"></param>
+    ''' <returns></returns>
+    Public Function ParticularCommand(ByVal fileName As String) As String
+        Dim title As String = "TML(Technifor-UC500-9/11/2016-TML V0.12)"
+        Dim pfstr As String = "PF " + Chr(34) + fileName + Chr(34) + " R "
+        Dim LENGTH_STR As Integer
+
+        Dim HEAD, MAIN, FOOTER As String
+        Dim pfCommand As String
+        selectmode(particularMode)
+        HeaderStructure(HEAD)
+        MainStructure(MAIN)
+        FooterStructure(FOOTER)
+        pfCommand = title + Chr(13) + Chr(10) + HEAD + MAIN + FOOTER
         Dim TX_HEAD = GetSendBuffer(pfstr) '轉成UTF-8(頭檔)
         Dim TX_FILE = GetSendBuffer(pfCommand) '轉成UTF-8(內文)
 
@@ -755,9 +866,55 @@ Public Class uc500Common
 #End Region
 
 #Region "其他"
-    Private Function spacing() As String
-
-    End Function
+    Private Sub selectmode(mode)
+        Select Case mode
+            Case MarkType.horizontal '水平
+                MarkMode = "L"
+                lineCnt = 1
+                Angle_L = 0 + offsetAngle
+            Case MarkType.horizontal_Reverse '水平反向
+                MarkMode = "L"
+                lineCnt = 1
+                Angle_L = 180 + offsetAngle
+            Case MarkType.horizontal_twoLine '水平兩行
+                MarkMode = "L"
+                lineCnt = 2
+                Angle_L = 0 + offsetAngle
+                MarkX_two = MarkX
+                MarkY_two = (CSng(MarkY) + CSng(lineSpace) + Heigth).ToString("0.00")
+            Case MarkType.horizontal_Reverse_twoLine '水平兩反向
+                MarkMode = "L"
+                lineCnt = 2
+                Angle_L = 180 + offsetAngle
+                MarkX_two = MarkX
+                MarkY_two = (MarkY - lineSpace - Heigth).ToString("0.00")
+                If MarkY_two < 0 Then MarkY_two = "0.00"
+            Case MarkType.Vertical '垂直
+                MarkMode = "L"
+                lineCnt = 1
+                Angle_L = 90 + offsetAngle
+            Case MarkType.Vertical_Reverse '垂直反向
+                MarkMode = "L"
+                lineCnt = 1
+                Angle_L = 270 + offsetAngle
+            Case MarkType.Vertical_twoLine '垂直兩行
+                MarkMode = "L"
+                lineCnt = 2
+                Angle_L = 90 + offsetAngle
+                MarkX_two = (CSng(MarkX) + CSng(lineSpace) + Heigth).ToString("0.00")
+                MarkY_two = MarkY
+            Case MarkType.Vertical_Reverse_twoLine '垂直兩行反向
+                MarkMode = "L"
+                lineCnt = 2
+                Angle_L = 270 + offsetAngle
+                MarkX_two = (MarkX - lineSpace - Heigth).ToString("0.00")
+                MarkY_two = MarkY
+                If MarkX_two < 0 Then MarkX_two = "0.00"
+        End Select
+        If Angle_L < 0 Then
+            Angle_L += 360
+        End If
+    End Sub
 
     Private Sub HeaderStructure(ByRef HEAD_Str As String)
         Dim BHCom As String = "BH()"
@@ -788,7 +945,7 @@ Public Class uc500Common
                 MVCom = "MV(" & MarkX_two & "," & MarkY_two & ")"
             End If
 
-            FOCom = "FO(0," & Heigth & "," & Between & "," & Width & ",L,N,0,N)"
+            FOCom = "FO(" & Font & "," & Heigth & "," & Between & "," & Width & ",C,N,0,N)"
 
             Select Case MarkMode
                 Case "L"
@@ -800,26 +957,12 @@ Public Class uc500Common
             '================== 打字本文 ==========================
             If lineCnt = 2 Then '兩行
                 If i = 1 Then
-                    'MKCom = "MK(" + line1 + ")"
-                    If Mid(line1, 1, 1) = "[" And Mid(line1, Len(line1), 1) = "]" Then
-                        MKCom = "MK(" + line1 + ")"
-                    Else
-                        MKCom = "MK(" + Chr(34) + line1 + Chr(34) + ")"
-                    End If
+                    MKCom = "MK(" + Chr(34) + line1 + Chr(34) + ")"
                 Else
-                    'MKCom = "MK(" + line2 + ")"
-                    If Mid(line2, 1, 1) = "[" And Mid(line2, Len(line2), 1) = "]" Then
-                        MKCom = "MK(" + line2 + ")"
-                    Else
-                        MKCom = "MK(" + Chr(34) + line2 + Chr(34) + ")"
-                    End If
+                    MKCom = "MK(" + Chr(34) + line2 + Chr(34) + ")"
                 End If
             Else '一行
-                If Mid(line1, 1, 1) = "[" And Mid(line1, Len(line1), 1) = "]" Then
-                    MKCom = "MK(" + line1 + ")"
-                Else
-                    MKCom = "MK(" + Chr(34) + line1 + Chr(34) + ")"
-                End If
+                MKCom = "MK(" + Chr(34) + line1 + Chr(34) + ")"
             End If
 
             If i = 1 Then

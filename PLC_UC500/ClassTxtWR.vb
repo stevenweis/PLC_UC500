@@ -94,7 +94,7 @@ Public Class ClassTxtWR
     Public Sub TxtRead_test2(ByVal filename As String, ByRef file As List(Of String))
         'Dim path As String
         'Path = CurDir()
-        Dim O_file = My.Computer.FileSystem.OpenTextFileReader(present_folder + data_folder + filename, Encoding.UTF8)
+        Dim O_file = My.Computer.FileSystem.OpenTextFileReader(present_folder + data_folder + filename, Encoding.Default)
         Dim sLine As String = ""
         '       Dim arrText As New ArrayList()   
         Do
@@ -151,8 +151,6 @@ Public Class ClassTxtWR
             End If
         Loop Until sLine Is Nothing
         O_file.Close()
-        'Dim a() As String = CType(arrText.ToArray(GetType(String)), String())
-        'Return a
     End Sub
     ''' <summary>
     ''' Dictionary(Of Integer, String) 讀取文字檔(與第一行分離) 用於分開外掛檔 PLC通道參數 
@@ -263,22 +261,6 @@ Public Class ClassTxtWR
         Next
     End Sub
 
-    'Public Function TxtRead2_Col(ByRef filename As String) As String()
-    '    'Dim MSTRconn_1 As String = "Provider=Microsoft.ACE.Oledb.12.0;Data Source=C:\TEST01\;Extended Properties='Text;HDR=NO;FMT=Delimited( );CharacterSet=65001'"
-    '    Dim MSTRconn_1 As String = "Provider=Microsoft.Jet.OLEDB.4.0;Data Source=C:\Users\Admin\Desktop\100萬筆資料;Extended Properties='Text;HDR=NO;FMT=Delimited( );CharacterSet=65001'"
-
-    '    Dim Mstrsql_1 = "Select * from 7pin_L.txt"
-    '    Dim Oconn_1 As New OleDbConnection(MSTRconn_1)
-    '    Oconn_1.Open()
-    '    Dim ODataAdapter_1 As New OleDbDataAdapter(Mstrsql_1, Oconn_1)
-
-    '    Dim ODataSet_1 As DataSet = New DataSet
-    '    ODataAdapter_1.Fill(ODataSet_1, "Table01")
-    '    ' DataGridView1.DataSource = Nothing
-    '    'DataGridView1.DataSource = ODataSet_1.Tables("Table01")
-    '    Oconn_1.Close()
-    '    ODataAdapter_1.Dispose()
-    'End Function
 #End Region
     '===============================================
     '讀取一維矩陣
